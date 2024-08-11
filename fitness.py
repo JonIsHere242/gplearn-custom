@@ -19,26 +19,6 @@ __all__ = ['make_fitness']
 
 class _Fitness(object):
 
-    """A metric to measure the fitness of a program.
-
-    This object is able to be called with NumPy vectorized arguments and return
-    a resulting floating point score quantifying the quality of the program's
-    representation of the true relationship.
-
-    Parameters
-    ----------
-    function : callable
-        A function with signature function(y, y_pred, sample_weight) that
-        returns a floating point number. Where `y` is the input target y
-        vector, `y_pred` is the predicted values from the genetic program, and
-        sample_weight is the sample_weight vector.
-
-    greater_is_better : bool
-        Whether a higher value from `function` indicates a better fit. In
-        general this would be False for metrics indicating the magnitude of
-        the error, and True for metrics indicating the quality of fit.
-
-    """
 
     def __init__(self, function, greater_is_better):
         self.function = function
@@ -50,37 +30,7 @@ class _Fitness(object):
 
 
 def make_fitness(*, function, greater_is_better, wrap=True):
-    """Make a fitness measure, a metric scoring the quality of a program's fit.
 
-    This factory function creates a fitness measure object which measures the
-    quality of a program's fit and thus its likelihood to undergo genetic
-    operations into the next generation. The resulting object is able to be
-    called with NumPy vectorized arguments and return a resulting floating
-    point score quantifying the quality of the program's representation of the
-    true relationship.
-
-    Parameters
-    ----------
-    function : callable
-        A function with signature function(y, y_pred, sample_weight) that
-        returns a floating point number. Where `y` is the input target y
-        vector, `y_pred` is the predicted values from the genetic program, and
-        sample_weight is the sample_weight vector.
-
-    greater_is_better : bool
-        Whether a higher value from `function` indicates a better fit. In
-        general this would be False for metrics indicating the magnitude of
-        the error, and True for metrics indicating the quality of fit.
-
-    wrap : bool, optional (default=True)
-        When running in parallel, pickling of custom metrics is not supported
-        by Python's default pickler. This option will wrap the function using
-        cloudpickle allowing you to pickle your solution, but the evolution may
-        run slightly more slowly. If you are running single-threaded in an
-        interactive Python session or have no need to save the model, set to
-        `False` for faster runs.
-
-    """
     if not isinstance(greater_is_better, bool):
         raise ValueError('greater_is_better must be bool, got %s'
                          % type(greater_is_better))

@@ -21,24 +21,7 @@ from numba import njit, vectorize, prange
 __all__ = ['make_function']
 
 class _Function:
-    """A representation of a mathematical relationship, a node in a program.
 
-    This object is able to be called with NumPy vectorized arguments and return
-    a resulting vector based on a mathematical relationship.
-
-    Parameters
-    ----------
-    function : callable
-        A function with signature `function(x1, *args)` that returns a Numpy
-        array of the same shape as its arguments.
-
-    name : str
-        The name for the function as it should be represented in the program
-        and its visualizations.
-
-    arity : int
-        The number of arguments that the `function` takes.
-    """
 
     def __init__(self, function: Callable, name: str, arity: int):
         self.function = function
@@ -49,27 +32,7 @@ class _Function:
         return self.function(*args)
 
 def _test_function_closure(function: Callable, arity: int, test_values: List[np.ndarray], name: str) -> None:
-    """Test if the function maintains closure with given test values.
 
-    Parameters
-    ----------
-    function : callable
-        The function to be tested.
-
-    arity : int
-        The number of arguments the function takes.
-
-    test_values : list of np.ndarray
-        The values to test the function against.
-
-    name : str
-        The name of the function.
-
-    Raises
-    ------
-    ValueError
-        If the function does not maintain closure with the given test values.
-    """
     for values in test_values:
         args = [values] * arity
         result = function(*args)
@@ -85,24 +48,7 @@ def _test_function_closure(function: Callable, arity: int, test_values: List[np.
 
 
 def _validate_function(function: Callable, name: str, arity: int) -> None:
-    """Validate the supplied function for correctness.
 
-    Parameters
-    ----------
-    function : callable
-        The function to be validated.
-
-    name : str
-        The name of the function.
-
-    arity : int
-        The number of arguments the function takes.
-
-    Raises
-    ------
-    ValueError
-        If the function does not meet the required specifications.
-    """
     if not isinstance(arity, int):
         raise ValueError(f'Arity must be an int, got {type(arity)}')
     if not isinstance(name, str):
@@ -142,39 +88,7 @@ def make_function(
     arity: int,
     wrap: bool = True
 ) -> _Function:
-    """Make a function node, a representation of a mathematical relationship.
-
-    This factory function creates a function node, one of the core nodes in any
-    program. The resulting object is able to be called with NumPy vectorized
-    arguments and return a resulting vector based on a mathematical
-    relationship.
-
-    Parameters
-    ----------
-    function : callable
-        A function with signature `function(x1, *args)` that returns a Numpy
-        array of the same shape as its arguments.
-
-    name : str
-        The name for the function as it should be represented in the program
-        and its visualizations.
-
-    arity : int
-        The number of arguments that the `function` takes.
-
-    wrap : bool, optional (default=True)
-        When running in parallel, pickling of custom functions is not supported
-        by Python's default pickler. This option will wrap the function using
-        cloudpickle allowing you to pickle your solution, but the evolution may
-        run slightly more slowly. If you are running single-threaded in an
-        interactive Python session or have no need to save the model, set to
-        `False` for faster runs.
-
-    Returns
-    -------
-    _Function
-        The function node object.
-    """
+    """Make a function object for use in genetic programming."""
     _validate_function(function, name, arity)
 
     if wrap:
@@ -186,7 +100,7 @@ def make_function(
 
 
 
-NumbaTest = False
+NumbaTest = True
 
 if NumbaTest:
     @vectorize(['float64(float64)'], nopython=True, fastmath=True)
@@ -229,11 +143,15 @@ if NumbaTest:
 
 else:
     # Optimized non-Numba functions
-    def protected_division(x1: np.ndarray, x2: np.ndarray) -> np.ndarray:
-        mask = np.abs(x2) > 0.001
-        result = np.ones_like(x1)
-        np.divide(x1, x2, out=result, where=mask)
-        return result
+    def protected_division(x1, x2):
+        """Closure of division (x1/x2) with improved handling of small denominators."""
+        with np.errstate(divide='ignore', invalid='ignore'):
+            result = np.divide(x1, x2)
+            mask = np.abs(x2) < 1e-10
+            result[mask] = np.sign(x1[mask]) * np.sign(x2[mask]) * 1e10
+            result[np.isnan(result) | np.isinf(result)] = 0
+            return result.astype(np.float64)
+
 
     def protected_sqrt(x1: np.ndarray) -> np.ndarray:
         return np.sqrt(np.abs(x1))
