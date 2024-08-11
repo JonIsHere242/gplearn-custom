@@ -573,6 +573,7 @@ class BaseSymbolic(BaseEstimator, metaclass=ABCMeta):
         return self
     
 
+
     def _verbose_reporter(self, run_details=None):
         """A report of the progress of the evolution process.
 
@@ -581,16 +582,16 @@ class BaseSymbolic(BaseEstimator, metaclass=ABCMeta):
         run_details : dict
             Information about the evolution.
         """
-        def truncate_formula(formula, max_length=40):
+        def truncate_formula(formula, max_length=48):
             """Truncate a formula to fit within a specified length."""
             if len(formula) > max_length:
-                return f"{formula[:max_length]}...({len(formula) - max_length} more chars)"
-            return formula.ljust(max_length + 20)  # Adjust padding for alignment
+                return formula[:max_length-16] + "...({} more chars)".format(len(formula) - (max_length-16))
+            return formula
 
         if run_details is None:
-            print('|    Generation    |      Population Average      |               Best Individual               |                        Best Formula                        |')
-            print('------------------- ------------------------------ --------------------------------------------- ------------------------------------------------------------')
-            print(' Gen    Time Left        Length     Fitness              Length     Fitness      OOB Fitness       Best Formula')
+            print('|    Generation    |   Population Average   |           Best Individual          |                Best Formula                  |')
+            print('------------------- ------------------------ ------------------------------------ ----------------------------------------------')
+            print(' Gen    Time Left      Length     Fitness    Length    Fitness     OOB Fitness       Best Formula')
 
         else:
             # Estimate remaining time for run
@@ -606,7 +607,7 @@ class BaseSymbolic(BaseEstimator, metaclass=ABCMeta):
                 remaining_time = '{0:.2f}s'.format(remaining_time)
 
             oob_fitness = 'N/A'
-            line_format = '{:4d} {:>12} {:>12.2f} {:>12g} {:>14d} {:>12g} {:>16} {:>5} {:<55}'
+            line_format = '{:3d} {:>10} {:>13.1f} {:>13.1e} {:>5d} {:>15f} {:>11}   {:<48}'
             if self.max_samples < 1.0:
                 oob_fitness = '{:.5f}'.format(run_details['best_oob_fitness'][-1])
             else:
@@ -622,8 +623,7 @@ class BaseSymbolic(BaseEstimator, metaclass=ABCMeta):
                                      run_details['best_length'][-1],
                                      run_details['best_fitness'][-1],
                                      oob_fitness,
-                                     '         ',  # Extra spacing between OOB Fitness and Best Formula
-                                     best_formula_str))
+                                     best_formula_str))  
 
 
 

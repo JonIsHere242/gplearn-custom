@@ -186,7 +186,7 @@ def make_function(
 
 
 
-NumbaTest = True
+NumbaTest = False
 
 if NumbaTest:
     @vectorize(['float64(float64)'], nopython=True, fastmath=True)
