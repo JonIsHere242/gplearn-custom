@@ -13,16 +13,22 @@ own custom functions.
 import numpy as np
 from joblib import wrap_non_picklable_objects
 from typing import Callable, List
-from numba import njit, vectorize, prange
-
-
-
+from numba import cuda, vectorize, njit, prange
 
 __all__ = ['make_function']
 
+# Check for CUDA availability
+if cuda.is_available():
+    print(f"CUDA is available. Found {cuda.detect().name}")
+    USE_GPU = True
+else:
+    print("CUDA is not available. GPU acceleration will not be used.")
+    USE_GPU = False
+
+# Minimum array size for GPU usage
+MIN_ARRAY_SIZE_FOR_GPU = 10000  # Adjust based on benchmarking
+
 class _Function:
-
-
     def __init__(self, function: Callable, name: str, arity: int):
         self.function = function
         self.name = name
@@ -32,7 +38,6 @@ class _Function:
         return self.function(*args)
 
 def _test_function_closure(function: Callable, arity: int, test_values: List[np.ndarray], name: str) -> None:
-
     for values in test_values:
         args = [values] * arity
         result = function(*args)
@@ -43,12 +48,7 @@ def _test_function_closure(function: Callable, arity: int, test_values: List[np.
         if np.any(np.abs(result) > np.finfo(np.float64).max):
             raise ValueError(f'Supplied function {name} produces values exceeding float64 limits.')
 
-
-
-
-
 def _validate_function(function: Callable, name: str, arity: int) -> None:
-
     if not isinstance(arity, int):
         raise ValueError(f'Arity must be an int, got {type(arity)}')
     if not isinstance(name, str):
@@ -96,81 +96,74 @@ def make_function(
 
     return _Function(function=function, name=name, arity=arity)
 
+# GPU functions
+if USE_GPU:
+    @vectorize(['float64(float64)'], target='cuda')
+    def _protected_log_gpu(x1):
+        return np.log(abs(x1) + 1e-10)
 
-
-
-
-NumbaTest = True
-
-if NumbaTest:
-    @vectorize(['float64(float64)'], nopython=True, fastmath=True)
-    def _protected_log(x1):
-        abs_x1 = abs(x1)
-        return np.log(abs_x1 + 1e-10)  # Add a small constant to avoid log(0)
-
-    @vectorize(['float64(float64, float64)'], nopython=True, fastmath=True)
-    def _protected_division(x1, x2):
+    @vectorize(['float64(float64, float64)'], target='cuda')
+    def _protected_division_gpu(x1, x2):
         return 1.0 if abs(x2) <= 0.001 else x1 / x2
 
-    @vectorize(['float64(float64)'], nopython=True, fastmath=True)
-    def _protected_sqrt(x1):
+    @vectorize(['float64(float64)'], target='cuda')
+    def _protected_sqrt_gpu(x1):
         return np.sqrt(abs(x1))
 
-    @vectorize(['float64(float64)'], nopython=True, fastmath=True)
-    def _protected_inverse(x1):
+    @vectorize(['float64(float64)'], target='cuda')
+    def _protected_inverse_gpu(x1):
         return 0.0 if abs(x1) <= 0.001 else 1.0 / x1
 
-    @njit(fastmath=True)
-    def _sigmoid(x1):
+    @vectorize(['float64(float64)'], target='cuda')
+    def _sigmoid_gpu(x1):
         return 1.0 / (1.0 + np.exp(-np.clip(x1, -100, 100)))
 
-    # Wrapper functions to handle NumPy warnings
-    def protected_log(x1):
-        with np.errstate(divide='ignore', invalid='ignore'):
-            return _protected_log(x1)
+# CPU functions
+@njit(fastmath=True)
+def _protected_log_cpu(x1):
+    return np.log(np.abs(x1) + 1e-10)
 
-    def protected_division(x1, x2):
-        return _protected_division(x1, x2)
+@njit(fastmath=True)
+def _protected_division_cpu(x1, x2):
+    return np.where(np.abs(x2) > 0.001, x1 / x2, 1.0)
 
-    def protected_sqrt(x1):
-        return _protected_sqrt(x1)
+@njit(fastmath=True)
+def _protected_sqrt_cpu(x1):
+    return np.sqrt(np.abs(x1))
 
-    def protected_inverse(x1):
-        return _protected_inverse(x1)
+@njit(fastmath=True)
+def _protected_inverse_cpu(x1):
+    return np.where(np.abs(x1) > 0.001, 1.0 / x1, 0.0)
 
-    def sigmoid(x1):
-        return _sigmoid(x1)
+@njit(fastmath=True)
+def _sigmoid_cpu(x1):
+    return 1.0 / (1.0 + np.exp(-np.clip(x1, -100, 100)))
 
-else:
-    # Optimized non-Numba functions
-    def protected_division(x1, x2):
-        """Closure of division (x1/x2) with improved handling of small denominators."""
-        with np.errstate(divide='ignore', invalid='ignore'):
-            result = np.divide(x1, x2)
-            mask = np.abs(x2) < 1e-10
-            result[mask] = np.sign(x1[mask]) * np.sign(x2[mask]) * 1e10
-            result[np.isnan(result) | np.isinf(result)] = 0
-            return result.astype(np.float64)
+# Wrapper functions to handle GPU/CPU selection
+def protected_log(x1):
+    if USE_GPU and len(x1) >= MIN_ARRAY_SIZE_FOR_GPU:
+        return _protected_log_gpu(x1)
+    return _protected_log_cpu(x1)
 
+def protected_division(x1, x2):
+    if USE_GPU and len(x1) >= MIN_ARRAY_SIZE_FOR_GPU:
+        return _protected_division_gpu(x1, x2)
+    return _protected_division_cpu(x1, x2)
 
-    def protected_sqrt(x1: np.ndarray) -> np.ndarray:
-        return np.sqrt(np.abs(x1))
+def protected_sqrt(x1):
+    if USE_GPU and len(x1) >= MIN_ARRAY_SIZE_FOR_GPU:
+        return _protected_sqrt_gpu(x1)
+    return _protected_sqrt_cpu(x1)
 
-    def protected_log(x1: np.ndarray) -> np.ndarray:
-        abs_x1 = np.abs(x1)
-        mask = abs_x1 > 0.001
-        result = np.zeros_like(x1)
-        np.log(abs_x1, out=result, where=mask)
-        return result
+def protected_inverse(x1):
+    if USE_GPU and len(x1) >= MIN_ARRAY_SIZE_FOR_GPU:
+        return _protected_inverse_gpu(x1)
+    return _protected_inverse_cpu(x1)
 
-    def protected_inverse(x1: np.ndarray) -> np.ndarray:
-        mask = np.abs(x1) > 0.001
-        result = np.zeros_like(x1)
-        np.divide(1.0, x1, out=result, where=mask)
-        return result
-
-    def sigmoid(x1: np.ndarray) -> np.ndarray:
-        return 1 / (1 + np.exp(np.clip(-x1, -100, 100)))
+def sigmoid(x1):
+    if USE_GPU and len(x1) >= MIN_ARRAY_SIZE_FOR_GPU:
+        return _sigmoid_gpu(x1)
+    return _sigmoid_cpu(x1)
 
 # Define function instances
 add2 = _Function(function=np.add, name='add', arity=2)
@@ -184,7 +177,7 @@ sin1 = _Function(function=np.sin, name='sin', arity=1)
 cos1 = _Function(function=np.cos, name='cos', arity=1)
 tan1 = _Function(function=np.tan, name='tan', arity=1)
 
-# Custom functions at the bottom
+# Custom functions
 div2 = _Function(function=protected_division, name='div', arity=2)
 sqrt1 = _Function(function=protected_sqrt, name='sqrt', arity=1)
 log1 = _Function(function=protected_log, name='log', arity=1)
@@ -206,5 +199,6 @@ _function_map = {
     'min': min2,
     'sin': sin1,
     'cos': cos1,
-    'tan': tan1
+    'tan': tan1,
+    'sig': sig1
 }
